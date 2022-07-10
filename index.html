@@ -16,17 +16,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"
         crossorigin="anonymous"></script>
-    <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6/control_utils.js"
-        crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils_3d@0.3/control_utils_3d.js"
-        crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3/drawing_utils.js"
-        crossorigin="anonymous"></script> -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js" crossorigin="anonymous"></script>
-
-    <!-- <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/hand-pose-detection"></script> -->
-    <!--Optional: Include below scripts if you want to use MediaPipe runtime. -->
-    <!-- <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands"> </script> -->
 </head>
 
 <body>
@@ -46,56 +36,7 @@
         const result = document.getElementById('score');
         let detector, camera, rafId, hands;
 
-        async function updateVideo(event) {
-            // Clear reference to any previous uploaded video.
-            URL.revokeObjectURL(camera.video.currentSrc);
-            const file = event.target.files[0];
-            camera.source.src = URL.createObjectURL(file);
-
-            // Wait for video to be loaded.
-            camera.video.load();
-            await new Promise((resolve) => {
-                camera.video.onloadeddata = () => {
-                    resolve(video);
-                };
-            });
-
-            const videoWidth = camera.video.videoWidth;
-            const videoHeight = camera.video.videoHeight;
-            // Must set below two lines, otherwise video element doesn't show.
-            camera.video.width = videoWidth;
-            camera.video.height = videoHeight;
-            // camera.canvas.width = videoWidth;
-            // camera.canvas.height = videoHeight;
-
-            result.innerHTML = 'Video is loaded.';
-        }
-
-        async function init() {
-            result.innerHTML = "Hang tight, while I get ready"
-
-            const model = handPoseDetection.SupportedModels.MediaPipeHands;
-            const detectorConfig = {
-                runtime: 'mediapipe', // 'mediapipe' or 'tfjs'
-                modelType: 'lite' // 'lite' or 'full'
-            };
-            detector = await handPoseDetection.createDetector(model, detectorConfig);
-            initReadyStatus = true;
-            result.innerHTML = "I'm ready :)"
-        }
-
-        // async function run() {
-        //     if (!initReadyStatus) {
-        //         result.innerHTML = "I'm not ready yet. Please wait :-/"
-        //         return
-        //     }
-        //     const hands = await detector.estimateHands(video);
-        //     result.innerHTML = JSON.stringify(hands, null, 2)
-        // }
-
-        // init()
-
-        function init2() {
+        function initLiveFeed() {
             const hands = new Hands({
                 locateFile: (file) => {
                     return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
@@ -120,7 +61,31 @@
             });
             camera.start();
         }
-        // init2()
+
+        async function updateVideo(event) {
+                // Clear reference to any previous uploaded video.
+                URL.revokeObjectURL(camera.video.currentSrc);
+                const file = event.target.files[0];
+                camera.source.src = URL.createObjectURL(file);
+
+                // Wait for video to be loaded.
+                camera.video.load();
+                await new Promise((resolve) => {
+                    camera.video.onloadeddata = () => {
+                        resolve(video);
+                    };
+                });
+
+                const videoWidth = camera.video.videoWidth;
+                const videoHeight = camera.video.videoHeight;
+                // Must set below two lines, otherwise video element doesn't show.
+                camera.video.width = videoWidth;
+                camera.video.height = videoHeight;
+                // camera.canvas.width = videoWidth;
+                // camera.canvas.height = videoHeight;
+
+                result.innerHTML = 'Video is loaded.';
+            }
 
         class Context {
             constructor() {
@@ -131,83 +96,8 @@
                 const stream = this.canvas.captureStream();
                 const options = { mimeType: 'video/webm; codecs=vp9' };
                 this.mediaRecorder = new MediaRecorder(stream, options);
-                this.mediaRecorder.ondataavailable = this.handleDataAvailable;
+                // this.mediaRecorder.ondataavailable = this.handleDataAvailable;
             }
-
-            // drawCtx() {
-            //     this.ctx.drawImage(
-            //         this.video, 0, 0, this.video.videoWidth, this.video.videoHeight);
-            // }
-
-            // clearCtx() {
-            //     this.ctx.clearRect(0, 0, this.video.videoWidth, this.video.videoHeight);
-            // }
-
-            // /**
-            //  * Draw the keypoints on the video.
-            //  * @param hands A list of hands to render.
-            //  */
-            // drawResults(hands) {
-            //     for (const hand of hands) {
-            //         this.drawResult(hand);
-            //     }
-            // }
-
-            // /**
-            //  * Draw the keypoints on the video.
-            //  * @param hand A hand with keypoints to render.
-            //  * @param ctxt Scatter GL context to render 3D keypoints to.
-            //  */
-            // drawResult(hand) {
-            //     if (hand.keypoints != null) {
-            //         this.drawKeypoints(hand.keypoints, hand.handedness);
-            //     }
-            // }
-
-            // /**
-            //  * Draw the keypoints on the video.
-            //  * @param keypoints A list of keypoints.
-            //  * @param handedness Label of hand (either Left or Right).
-            //  */
-            // drawKeypoints(keypoints, handedness) {
-            //     const keypointsArray = keypoints;
-            //     this.ctx.fillStyle = handedness === 'Left' ? 'Red' : 'Blue';
-            //     this.ctx.strokeStyle = 'White';
-            //     this.ctx.lineWidth = params.DEFAULT_LINE_WIDTH;
-
-            //     for (let i = 0; i < keypointsArray.length; i++) {
-            //         const y = keypointsArray[i].x;
-            //         const x = keypointsArray[i].y;
-            //         this.drawPoint(x - 2, y - 2, 3);
-            //     }
-
-            //     const fingers = Object.keys(fingerLookupIndices);
-            //     for (let i = 0; i < fingers.length; i++) {
-            //         const finger = fingers[i];
-            //         const points = fingerLookupIndices[finger].map(idx => keypoints[idx]);
-            //         this.drawPath(points, false);
-            //     }
-            // }
-
-            // drawPath(points, closePath) {
-            //     const region = new Path2D();
-            //     region.moveTo(points[0].x, points[0].y);
-            //     for (let i = 1; i < points.length; i++) {
-            //         const point = points[i];
-            //         region.lineTo(point.x, point.y);
-            //     }
-
-            //     if (closePath) {
-            //         region.closePath();
-            //     }
-            //     this.ctx.stroke(region);
-            // }
-
-            // drawPoint(y, x, r) {
-            //     this.ctx.beginPath();
-            //     this.ctx.arc(x, y, r, 0, 2 * Math.PI);
-            //     this.ctx.fill();
-            // }
 
             start() {
                 this.mediaRecorder.start();
@@ -216,23 +106,6 @@
             stop() {
                 this.mediaRecorder.stop();
             }
-
-            handleDataAvailable(event) {
-                if (event.data.size > 0) {
-                    const recordedChunks = [event.data];
-
-                    // Download.
-                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    document.body.appendChild(a);
-                    a.style = 'display: none';
-                    a.href = url;
-                    a.download = 'hands.webm';
-                    a.click();
-                    window.URL.revokeObjectURL(url);
-                }
-            }
         }
 
         async function runFrame() {
@@ -240,7 +113,6 @@
                 // video has finished.
                 camera.mediaRecorder.stop();
                 // camera.clearCtx();
-                // uncomment below to show the video preview
                 // camera.video.style.visibility = 'visible';
                 return;
             }
@@ -250,20 +122,6 @@
         }
 
         async function run() {
-            // statusElement.innerHTML = 'Warming up model.';
-
-            // // Warming up pipeline.
-            // const [runtime, $backend] = STATE.backend.split('-');
-
-            // if (runtime === 'tfjs') {
-            //     const warmUpTensor =
-            //         tf.fill([camera.video.height, camera.video.width, 3], 0, 'float32');
-            //     await detector.estimateHands(
-            //         warmUpTensor,
-            //         { flipHorizontal: false });
-            //     warmUpTensor.dispose();
-            //     statusElement.innerHTML = 'Model is warmed up.';
-            // }
 
             camera.video.style.visibility = 'hidden';
             video.pause();
@@ -280,7 +138,7 @@
             await runFrame();
         }
 
-        function init3() {
+        function init() {
             hands = new Hands({
                 locateFile: (file) => {
                     return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
@@ -304,7 +162,8 @@
             const uploadButton = document.getElementById('videofile');
             uploadButton.onchange = updateVideo;
         }
-        init3()
+
+        init()
     </script>
 </body>
 
