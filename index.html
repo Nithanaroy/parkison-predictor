@@ -16,15 +16,24 @@
 
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js"
         crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
+        crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js" crossorigin="anonymous"></script>
 </head>
 
 <body>
-    <input type="file" id="videofile" name="video" accept="video/*">
-    <button type="button" id="submit">Run</button>
+    <div id="alert"></div>
+    <!-- Uncomment to use upload based prediction -->
+    <!-- <input type="file" id="videofile" name="video" accept="video/*">
+    <button type="button" id="submit">Run</button> -->
+
+    <button id="startTestBtn">Start Test</button>
+    <button id="stopTestBtn">End Test</button>
     <div class="container" id="canvas-wrapper">
-        <canvas id="output" style="display: none;"></canvas>
-        <video id="video" style="display: none">
+        <canvas id="output" style="width: 640px; height: 310px"></canvas>
+        <video id="video">
             <source id="currentVID" src="" type="video/mp4">
         </video>
     </div>
@@ -32,11 +41,104 @@
 
     <script type="module">
         let initReadyStatus = false;
+        const alertStatusBox = document.getElementById('alert');
         const video = document.getElementById('video');
         const result = document.getElementById('score');
+        const canvasElement = document.getElementById('output');
+        const canvasCtx = canvasElement.getContext('2d');
+        const startTestBtn = document.getElementById('startTestBtn');
+        const stopTestBtn = document.getElementById('stopTestBtn');
         let detector, camera, rafId, hands;
 
+        class FingerTappingMetric {
+            constructor() {
+                this.tapThreshold = 0.1
+                this.count = 0 // number of times thumb and index finger met
+                this.isBeingTapped = false; // are the fingers currently being tapped
+                this.prevTapState = false;
+                this.avgTapDuration = 0;
+                this.tapFreq = 0
+                this.testInProgress = false;
+                this.tapTs = []
+                this.lastTapTs = -1;
+                this.testStartTs = -1;
+                this.totalTestDuration = 0
+            }
+
+            startTest() {
+                this.testInProgress = true
+                this.testStartTs = new Date().getTime()
+            }
+
+            stopTest() {
+                this.testInProgress = false
+                this.totalTestDuration += new Date().getTime() - this.testStartTs
+                this.computeLapMetrics();
+            }
+
+            computeLapMetrics() {
+                this.tapFreq = this.totalTestDuration / this.count;
+            }
+
+            compute(handLandmarks) {
+                if (!this.testInProgress) {
+                    return;
+                }
+
+                const results = {}
+                let p1, p2
+                results["thumb"] = p1 = [handLandmarks[4]['x'], handLandmarks[4]['y']]
+                results["index"] = p2 = [handLandmarks[8]['x'], handLandmarks[8]['y']]
+                results["distance"] = Math.sqrt(Math.pow(p2[0] - p1[0], 2) + Math.pow(p2[1] - p1[1], 2))
+                this.prevTapState = this.isBeingTapped;
+                this.isBeingTapped = results['distance'] < this.tapThreshold
+                if (!this.prevTapState && this.isBeingTapped) {
+                    this.count++;
+                    const currTapTs = new Date().getTime();
+                    this.tapTs.push(currTapTs)
+                    if (this.lastTapTs > 0) {
+                        // first tap as warm up for some metrics
+                        const tapCountWithoutWarmup = this.count - 1;
+                        const tapDuration = currTapTs - this.lastTapTs
+                        this.avgTapDuration = (this.avgTapDuration * (tapCountWithoutWarmup - 1) + tapDuration) / tapCountWithoutWarmup
+                    }
+                    this.lastTapTs = currTapTs
+                }
+            }
+        }
+
+        const ftm = new FingerTappingMetric()
+
+        function onResults(results) {
+            // alertStatusBox.innerHTML = ""
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+            if (results.multiHandLandmarks) {
+                for (const landmarks of results.multiHandLandmarks) {
+                    drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 3 });
+                    drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 1, radius: 3 });
+                    computeAndShowMetric(landmarks)
+                }
+            }
+            canvasCtx.restore();
+        }
+
+        function computeAndShowMetric(handLandmarks) {
+            ftm.compute(handLandmarks)
+            // result.innerHTML = `${ftm.prevTapState}, ${ftm.isBeingTapped}, ${ftm.count}, ${(ftm.avgTapDuration / 1000).toFixed(3)}s, ${(ftm.tapFreq / 1000).toFixed(3)}s`
+            result.innerHTML = `
+                <strong> Number of taps in this test:</strong> ${ftm.count} <br />
+                <strong> Average tap duration:</strong> ${(ftm.avgTapDuration / 1000).toFixed(3)}s <br />
+                <strong> Tap Frequency:</strong> ${(ftm.tapFreq / 1000).toFixed(3)}s <br />
+            `
+        }
+
         function initLiveFeed() {
+            video.style.display = "none"; // hide the live video and only show the annotated video
+
+            // alertStatusBox.innerHTML = "Loading the test predictor model, please wait."
+
             const hands = new Hands({
                 locateFile: (file) => {
                     return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
@@ -49,43 +151,63 @@
                 minTrackingConfidence: 0.5
             });
             hands.onResults(results => {
-                result.innerHTML = JSON.stringify(results.multiHandWorldLandmarks, null, 2)
+                // result.innerHTML = JSON.stringify(results.multiHandWorldLandmarks, null, 2)
+                onResults(results)
             });
 
             const camera = new Camera(video, {
                 onFrame: async () => {
                     await hands.send({ image: video });
                 },
-                width: 1280,
-                height: 720
+                width: 640,
+                height: 310
             });
             camera.start();
+
+            startTestBtn.onclick = () => {
+                alertStatusBox.innerHTML = `Test in progress`
+                ftm.startTest()
+            }
+            stopTestBtn.onclick = () => {
+                alertStatusBox.innerHTML = ``
+                ftm.stopTest()
+            }
+
+        }
+
+        function extractTestLandmarks(multiHandWorldLandmarks) {
+            const results = {}
+            for (const handLandmark of multiHandWorldLandmarks) {
+                results["thumb"] = [handLandmark[4]['x'], handLandmark[4]['y']]
+                results["index"] = [handLandmark[8]['x'], handLandmark[8]['y']]
+            }
+            return results;
         }
 
         async function updateVideo(event) {
-                // Clear reference to any previous uploaded video.
-                URL.revokeObjectURL(camera.video.currentSrc);
-                const file = event.target.files[0];
-                camera.source.src = URL.createObjectURL(file);
+            // Clear reference to any previous uploaded video.
+            URL.revokeObjectURL(camera.video.currentSrc);
+            const file = event.target.files[0];
+            camera.source.src = URL.createObjectURL(file);
 
-                // Wait for video to be loaded.
-                camera.video.load();
-                await new Promise((resolve) => {
-                    camera.video.onloadeddata = () => {
-                        resolve(video);
-                    };
-                });
+            // Wait for video to be loaded.
+            camera.video.load();
+            await new Promise((resolve) => {
+                camera.video.onloadeddata = () => {
+                    resolve(video);
+                };
+            });
 
-                const videoWidth = camera.video.videoWidth;
-                const videoHeight = camera.video.videoHeight;
-                // Must set below two lines, otherwise video element doesn't show.
-                camera.video.width = videoWidth;
-                camera.video.height = videoHeight;
-                // camera.canvas.width = videoWidth;
-                // camera.canvas.height = videoHeight;
+            const videoWidth = camera.video.videoWidth;
+            const videoHeight = camera.video.videoHeight;
+            // Must set below two lines, otherwise video element doesn't show.
+            camera.video.width = videoWidth;
+            camera.video.height = videoHeight;
+            // camera.canvas.width = videoWidth;
+            // camera.canvas.height = videoHeight;
 
-                result.innerHTML = 'Video is loaded.';
-            }
+            result.innerHTML = 'Video is loaded.';
+        }
 
         class Context {
             constructor() {
@@ -145,13 +267,13 @@
                 }
             });
             hands.setOptions({
-                maxNumHands: 2,
+                maxNumHands: 1,
                 modelComplexity: 1,
                 minDetectionConfidence: 0.5,
                 minTrackingConfidence: 0.5
             });
             hands.onResults(results => {
-                result.innerHTML = JSON.stringify(results.multiHandWorldLandmarks, null, 2)
+                result.innerHTML = JSON.stringify(extractTestLandmarks(results.multiHandWorldLandmarks), null, 2)
             });
 
             camera = new Context();
@@ -163,7 +285,8 @@
             uploadButton.onchange = updateVideo;
         }
 
-        init()
+        // init()
+        initLiveFeed();
     </script>
 </body>
 
