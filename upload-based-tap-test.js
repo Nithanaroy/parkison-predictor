@@ -79,6 +79,15 @@ async function run() {
     await runFrame();
 }
 
+function extractTestLandmarks(multiHandWorldLandmarks) {
+    const results = {}
+    for (const handLandmark of multiHandWorldLandmarks) {
+        results["thumb"] = [handLandmark[4]['x'], handLandmark[4]['y']]
+        results["index"] = [handLandmark[8]['x'], handLandmark[8]['y']]
+    }
+    return results;
+}
+
 function init() {
     hands = new Hands({
         locateFile: (file) => {

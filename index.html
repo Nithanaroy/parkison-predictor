@@ -29,14 +29,17 @@
     <!-- <input type="file" id="videofile" name="video" accept="video/*">
     <button type="button" id="submit">Run</button> -->
 
-    <button id="startTestBtn">Start Test</button>
-    <button id="stopTestBtn">End Test</button>
     <div class="container" id="canvas-wrapper">
         <div id="videoMsgBox"></div>
         <canvas id="output" style="width: 640px; height: 310px"></canvas>
         <video id="video">
             <source id="currentVID" src="" type="video/mp4">
         </video>
+    </div>
+
+    <div style="margin: 1rem 0;">
+        <button id="startTestBtn">Start Test</button>
+        <button id="stopTestBtn">End Test</button>
     </div>
     <div id="score"></div>
 
@@ -57,9 +60,11 @@
                 this.tapThreshold = 0.1
                 this.count = 0 // number of times thumb and index finger met
                 this.isBeingTapped = false; // are the fingers currently being tapped
-                this.prevTapState = false;
+                this.isPrevStateTap = false;
                 this.avgTapDuration = 0;
-                this.tapFreq = 0
+                this.tapFreq = -1
+                this.consistencyPercentile = 90
+                this.tapDurationConsistency = -1
                 this.testInProgress = false;
                 this.tapTs = []
                 this.lastTapTs = -1;
@@ -73,13 +78,43 @@
             }
 
             stopTest() {
-                this.testInProgress = false
-                this.totalTestDuration += new Date().getTime() - this.testStartTs
-                this.computeLapMetrics();
+                if (this.testInProgress) {
+                    // stop only if test is in progress
+                    this.testInProgress = false
+                    this.totalTestDuration += new Date().getTime() - this.testStartTs
+                    this.computeLapMetrics();
+                }
             }
 
             computeLapMetrics() {
                 this.tapFreq = this.totalTestDuration / this.count;
+                this.tapDurationConsistency = this.computePercentile(this.consistencyPercentile)
+            }
+
+            computePercentile(p) {
+                if (this.tapTs.length > 1) {
+                    const tapDurations = []
+                    const z1 = this.tapTs.slice(0, -1)
+                    const z2 = this.tapTs.slice(1)
+                    for (let i = 0; i < z1.length; i++) {
+                        tapDurations.push(z2[i] - z1[i])
+                    }
+
+                    tapDurations.sort((a, b) => a - b);
+                    console.log(tapDurations.join(","))
+                    // reference: https://www.calculatorsoup.com/calculators/statistics/percentile-calculator.php
+                    const percentileRank = (p / 100) * (tapDurations.length - 1) // zero based index
+                    if (Math.floor(percentileRank) === percentileRank) {
+                        // integer rank
+                        return tapDurations[percentileRank]
+                    } else {
+                        // interpolate
+                        // x_ri + rf * (x_(ri + 1) - x_ri)
+                        const integralRank = Math.floor(percentileRank)
+                        const fractionalRank = percentileRank - integralRank
+                        return tapDurations[integralRank] + fractionalRank * (tapDurations[integralRank + 1] - tapDurations[integralRank])
+                    }
+                }
             }
 
             compute(handLandmarks) {
@@ -92,14 +127,14 @@
                 results["thumb"] = p1 = [handLandmarks[4]['x'], handLandmarks[4]['y']]
                 results["index"] = p2 = [handLandmarks[8]['x'], handLandmarks[8]['y']]
                 results["distance"] = Math.sqrt(Math.pow(p2[0] - p1[0], 2) + Math.pow(p2[1] - p1[1], 2))
-                this.prevTapState = this.isBeingTapped;
+                this.isPrevStateTap = this.isBeingTapped;
                 this.isBeingTapped = results['distance'] < this.tapThreshold
-                if (!this.prevTapState && this.isBeingTapped) {
+                if (!this.isPrevStateTap && this.isBeingTapped) {
                     this.count++;
                     const currTapTs = new Date().getTime();
                     this.tapTs.push(currTapTs)
+                    // ignore the first tap as a warm up and skip computing some metrics
                     if (this.lastTapTs > 0) {
-                        // first tap as warm up for some metrics
                         const tapCountWithoutWarmup = this.count - 1;
                         const tapDuration = currTapTs - this.lastTapTs
                         this.avgTapDuration = (this.avgTapDuration * (tapCountWithoutWarmup - 1) + tapDuration) / tapCountWithoutWarmup
@@ -120,19 +155,28 @@
                 for (const landmarks of results.multiHandLandmarks) {
                     drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, { color: '#00FF00', lineWidth: 3 });
                     drawLandmarks(canvasCtx, landmarks, { color: '#FF0000', lineWidth: 1, radius: 3 });
-                    computeAndShowMetric(landmarks)
+                    computeAndShowMetrics(landmarks)
                 }
             }
             canvasCtx.restore();
         }
 
-        function computeAndShowMetric(handLandmarks) {
-            ftm.compute(handLandmarks)
-            // result.innerHTML = `${ftm.prevTapState}, ${ftm.isBeingTapped}, ${ftm.count}, ${(ftm.avgTapDuration / 1000).toFixed(3)}s, ${(ftm.tapFreq / 1000).toFixed(3)}s`
+        function computeAndShowMetrics(handLandmarks) {
+            if (ftm.testInProgress) {
+                ftm.compute(handLandmarks)
+                showMetrics()
+            }
+        }
+
+        function showMetrics() {
+            // result.innerHTML = `${ftm.isPrevStateTap}, ${ftm.isBeingTapped}, ${ftm.count}, ${(ftm.avgTapDuration / 1000).toFixed(3)}s, ${(ftm.tapFreq / 1000).toFixed(3)}s`
+            const tapFreqMsg = `<strong>Tap Frequency:</strong> ${(ftm.tapFreq / 1000).toFixed(3)}s <br />`
+            const consistencyMsg = `<br />The patient took atmost <strong>${(ftm.tapDurationConsistency / 1000).toFixed(3)}s</strong>, ${ftm.consistencyPercentile}% of the time`
             result.innerHTML = `
-                <strong> Number of taps in this test:</strong> ${ftm.count} <br />
-                <strong> Average tap duration:</strong> ${(ftm.avgTapDuration / 1000).toFixed(3)}s <br />
-                <strong> Tap Frequency:</strong> ${(ftm.tapFreq / 1000).toFixed(3)}s <br />
+                <strong>Number of taps in this test:</strong> ${ftm.count} <br />
+                <strong>Average tap duration:</strong> ${(ftm.avgTapDuration / 1000).toFixed(3)}s <br />
+                ${ftm.tapFreq > 0 ? tapFreqMsg : ""}
+                ${ftm.tapDurationConsistency > 0 ? consistencyMsg : ""}
             `
         }
 
@@ -173,17 +217,9 @@
             stopTestBtn.onclick = () => {
                 alertStatusBox.innerHTML = ``
                 ftm.stopTest()
+                showMetrics()
             }
 
-        }
-
-        function extractTestLandmarks(multiHandWorldLandmarks) {
-            const results = {}
-            for (const handLandmark of multiHandWorldLandmarks) {
-                results["thumb"] = [handLandmark[4]['x'], handLandmark[4]['y']]
-                results["index"] = [handLandmark[8]['x'], handLandmark[8]['y']]
-            }
-            return results;
         }
 
         initLiveFeed();
