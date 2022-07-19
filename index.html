@@ -21,10 +21,16 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"
         crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: Segoe UI, Optima, Arial;
+        }
+    </style>
 </head>
 
 <body>
-    <div id="alert"></div>
+    <div id="alert" style="margin-bottom: 1rem;"></div>
     <!-- Uncomment to use upload based prediction -->
     <!-- <input type="file" id="videofile" name="video" accept="video/*">
     <button type="button" id="submit">Run</button> -->
@@ -170,12 +176,14 @@
 
         function showMetrics() {
             // result.innerHTML = `${ftm.isPrevStateTap}, ${ftm.isBeingTapped}, ${ftm.count}, ${(ftm.avgTapDuration / 1000).toFixed(3)}s, ${(ftm.tapFreq / 1000).toFixed(3)}s`
+            const testDurationMsg = `<strong>Total test duration:</strong> ${(ftm.totalTestDuration / 1000).toFixed(3)}s <br />`
             const tapFreqMsg = `<strong>Tap Frequency:</strong> ${(ftm.tapFreq / 1000).toFixed(3)}s <br />`
             const consistencyMsg = `<br />The patient took atmost <strong>${(ftm.tapDurationConsistency / 1000).toFixed(3)}s</strong>, ${ftm.consistencyPercentile}% of the time`
             result.innerHTML = `
+                ${ftm.totalTestDuration > 0 ? testDurationMsg: ""}
                 <strong>Number of taps in this test:</strong> ${ftm.count} <br />
                 <strong>Average tap duration:</strong> ${(ftm.avgTapDuration / 1000).toFixed(3)}s <br />
-                ${ftm.tapFreq > 0 ? tapFreqMsg : ""}
+                ${ftm.tapFreq > 0 && isFinite(ftm.tapFreq) ? tapFreqMsg : ""}
                 ${ftm.tapDurationConsistency > 0 ? consistencyMsg : ""}
             `
         }
