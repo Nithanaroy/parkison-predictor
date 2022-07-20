@@ -36,7 +36,8 @@
     <script src="./camera.js"></script>
     <style>
         body {
-            margin: 0;
+            /* margin: 0; */
+            font-family: Segoe UI, Optima, Arial;
         }
 
         #canvas-wrapper,
@@ -48,94 +49,152 @@
 
 <body>
     <div id="main">
+        <div id="alert" style="margin-bottom: 1rem;"></div>
         <div class="container">
             <div class="canvas-wrapper">
+                <div id="videoMsgBox"></div>
                 <canvas id="output"></canvas>
                 <video id="video" playsinline style="
-              -webkit-transform: scaleX(-1);
-              transform: scaleX(-1);
-              visibility: hidden;
-              width: auto;
-              height: auto;
-              ">
+                    -webkit-transform: scaleX(-1);
+                    transform: scaleX(-1);
+                    visibility: hidden;
+                    width: auto;
+                    height: auto;">
                 </video>
             </div>
             <div id="scatter-gl-container"></div>
         </div>
-        <script>
-            let detector
-            let camera, stats;
-            let startInferenceTime, numInferences = 0;
-            let inferenceTimeSum = 0, lastPanelUpdate = 0;
-            let rafId;
 
-            async function renderResult() {
-                if (camera.video.readyState < 2) {
-                    await new Promise((resolve) => {
-                        camera.video.onloadeddata = () => {
-                            resolve(video);
-                        };
-                    });
-                }
+        <div style="margin: 1rem 0;">
+            <button id="startTestBtn">Start Test</button>
+            <button id="stopTestBtn">End Test</button>
+        </div>
+        <div id="score"></div>
+    </div>
+    <script>
+        let detector
+        let camera, stats;
+        let startInferenceTime, numInferences = 0;
+        let inferenceTimeSum = 0, lastPanelUpdate = 0;
+        let rafId;
 
-                let poses = null;
+        let testInProgress = false
+        const alertStatusBox = document.getElementById('alert');
+        const videoMsgBox = document.getElementById('videoMsgBox');
+        const startTestBtn = document.getElementById('startTestBtn');
+        const stopTestBtn = document.getElementById('stopTestBtn');
+        const scoreEl = document.getElementById("score")
 
-                // Detector can be null if initialization failed (for example when loading
-                // from a URL that does not exist).
-                if (detector != null) {
-                    // FPS only counts the time it takes to finish estimatePoses.
-                    // beginEstimatePosesStats();
+        let minTilt = Infinity
+        let maxTilt = -Infinity
+        let totalNeckTilt = 0
+        let totalSamples = 0
 
-                    // Detectors can throw errors, for example when using custom URLs that
-                    // contain a model that doesn't provide the expected output.
-                    try {
-                        poses = await detector.estimatePoses(
-                            camera.video,
-                            { maxPoses: 1, flipHorizontal: false });
-                    } catch (error) {
-                        detector.dispose();
-                        detector = null;
-                        alert(error);
-                    }
+        function computeScore(poses) {
+            if (poses.length === 0) {
+                return;
+            }
+            const nose = poses[0]['keypoints'][0]
+            const left_ear = poses[0]['keypoints'][3]
+            const right_ear = poses[0]['keypoints'][4]
+            const slope = Math.atan((right_ear.y - nose.y) / (right_ear.x - nose.x))
+            return slope
+        }
 
-                    // endEstimatePosesStats();
-                }
+        function computeAndShowDerivedScores(poses) {
+            totalSamples++
 
-                camera.drawCtx();
+            const score = computeScore(poses) * 100
+            totalNeckTilt += score
 
-                // The null check makes sure the UI is not in the middle of changing to a
-                // different model. If during model change, the result is from an old model,
-                // which shouldn't be rendered.
-                if (poses && poses.length > 0) {
-                    camera.drawResults(poses);
-                }
+            if (maxTilt < score) {
+                maxTilt = score
+            }
+            if (score < minTilt) {
+                minTilt = score
             }
 
-            async function renderPrediction() {
-                // await checkGuiUpdate();
+            scoreEl.innerHTML = `
+            Live Neck tilt: ${score.toFixed(0)} degrees <br /><br />
 
-                // if (!STATE.isModelChanged) {
-                await renderResult();
-                // }
+            Neck title at rest (average title): ${(totalNeckTilt / totalSamples).toFixed(0)} degrees <br /><br />
 
-                rafId = requestAnimationFrame(renderPrediction);
-            };
+            Minimum neck tilt so far: ${minTilt.toFixed(0)} degrees <br />
+            Maximum neck tilt so far: ${maxTilt.toFixed(0)} degrees <br />
+            `
+        }
 
-            async function app() {
-                // Gui content will change depending on which model is in the query string.
+        async function renderResult() {
+            videoMsgBox.innerHTML = ""
+            if (camera.video.readyState < 2) {
+                await new Promise((resolve) => {
+                    camera.video.onloadeddata = () => {
+                        resolve(video);
+                    };
+                });
+            }
 
+            let poses = null;
 
-                camera = await Camera.setupCamera(STATE.camera);
+            // Detector can be null if initialization failed (for example when loading
+            // from a URL that does not exist).
+            if (detector != null) {
+                // FPS only counts the time it takes to finish estimatePoses.
+                // beginEstimatePosesStats();
 
-                // await setBackendAndEnvFlags(STATE.flags, STATE.backend);
+                // Detectors can throw errors, for example when using custom URLs that
+                // contain a model that doesn't provide the expected output.
+                try {
+                    poses = await detector.estimatePoses(
+                        camera.video,
+                        { maxPoses: 1, flipHorizontal: false });
+                } catch (error) {
+                    detector.dispose();
+                    detector = null;
+                    alert(error);
+                }
 
-                detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet)
+                // endEstimatePosesStats();
+            }
 
-                renderPrediction();
-            };
+            camera.drawCtx();
 
-            app();
-        </script>
+            // The null check makes sure the UI is not in the middle of changing to a
+            // different model. If during model change, the result is from an old model,
+            // which shouldn't be rendered.
+            if (poses && poses.length > 0) {
+                camera.drawResults(poses);
+            }
+
+            if (testInProgress) {
+                computeAndShowDerivedScores(poses)
+            }
+        }
+
+        async function renderPrediction() {
+            await renderResult();
+            rafId = requestAnimationFrame(renderPrediction);
+        };
+
+        async function app() {
+            videoMsgBox.innerHTML = "Loading the test predictor model, please wait."
+            camera = await Camera.setupCamera(STATE.camera);
+            detector = await poseDetection.createDetector(poseDetection.SupportedModels.MoveNet)
+            renderPrediction();
+
+            startTestBtn.onclick = () => {
+                testInProgress = true
+                alertStatusBox.innerHTML = `Test in progress`
+            }
+            stopTestBtn.onclick = () => {
+                testInProgress = false
+                alertStatusBox.innerHTML = ``
+                // showMetrics()
+            }
+        };
+
+        app();
+    </script>
 </body>
 
 </html>
